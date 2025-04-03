@@ -40,9 +40,9 @@ const CalendarData: React.FC = () => {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
-    // Your Google API client ID from Google Cloud Console
-    const CLIENT_ID = '975583872856-ifb9hotnr7sq4e28b7toiq58148qilkn.apps.googleusercontent.com';
-    const API_KEY = 'AIzaSyCejZ7xPiFDrTglqOrTp16d-VeqBLpMYR8';
+    // Use environment variables instead of hardcoded values
+    const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
+    const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY as string;
     const SCOPES = 'https://www.googleapis.com/auth/calendar'; // Remove .readonly to allow write access
 
     // Update the export in the useEffect
