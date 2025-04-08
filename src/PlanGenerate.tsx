@@ -22,6 +22,7 @@ const PlanGenerate: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [updateStatus, setUpdateStatus] = useState<{ success?: boolean; message?: string } | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     
     // Fix: Use local date components to ensure correct timezone handling
     const today = new Date();
@@ -53,6 +54,74 @@ const PlanGenerate: React.FC = () => {
             duration: 30
         });
         setError(null);
+    };
+
+    // Delete all tasks
+    const handleDeleteAllTasks = () => {
+        setUserTasks([]);
+        setGeneratedSchedule(null);
+        setUpdateStatus(null);
+    };
+
+    // Start editing a task
+    const handleEditTask = (taskId: string) => {
+        const taskToEdit = userTasks.find(task => task.id === taskId);
+        if (taskToEdit) {
+            setNewTask({ ...taskToEdit });
+            setEditingTaskId(taskId);
+        }
+    };
+
+    // Update an existing task
+    const handleUpdateTask = () => {
+        if (editingTaskId && newTask.title.trim() !== '') {
+            setUserTasks(prevTasks => 
+                prevTasks.map(task => 
+                    task.id === editingTaskId ? { ...newTask, id: editingTaskId } : task
+                )
+            );
+            setNewTask({
+                id: '',
+                title: '',
+                description: '',
+                priority: 'Medium',
+                timeFrame: 'Anytime',
+                duration: 30
+            });
+            setEditingTaskId(null);
+            setError(null);
+        } else {
+            setError('Task title cannot be empty');
+        }
+    };
+
+    // Delete a specific task
+    const handleDeleteTask = (taskId: string) => {
+        setUserTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+        if (editingTaskId === taskId) {
+            setNewTask({
+                id: '',
+                title: '',
+                description: '',
+                priority: 'Medium',
+                timeFrame: 'Anytime',
+                duration: 30
+            });
+            setEditingTaskId(null);
+        }
+    };
+
+    // Cancel editing
+    const handleCancelEdit = () => {
+        setNewTask({
+            id: '',
+            title: '',
+            description: '',
+            priority: 'Medium',
+            timeFrame: 'Anytime',
+            duration: 30
+        });
+        setEditingTaskId(null);
     };
 
     // Generate schedule using Gemini API
@@ -161,6 +230,58 @@ const PlanGenerate: React.FC = () => {
         }
     };
 
+    // Add tasks directly to calendar without generating schedule
+    const handleAddTasksToCalendar = async () => {
+        if (userTasks.length === 0) {
+            setUpdateStatus({
+                success: false,
+                message: "No tasks to add to calendar"
+            });
+            return;
+        }
+
+        setIsUpdating(true);
+        setUpdateStatus(null);
+
+        // Check if user is authenticated
+        const token = sessionStorage.getItem('gapi-token');
+        if (!token) {
+            setUpdateStatus({
+                success: false,
+                message: "You need to sign in with Google first (at the top of the page)"
+            });
+            setIsUpdating(false);
+            return;
+        }
+
+        try {
+            // Format tasks as a simple schedule
+            const simpleSchedule: GeneratedSchedule = {
+                schedule: userTasks.map(task => ({
+                    time: task.timeFrame === 'Morning' ? '09:00 AM' :
+                          task.timeFrame === 'Afternoon' ? '01:00 PM' :
+                          task.timeFrame === 'Evening' ? '06:00 PM' :
+                          task.timeFrame === 'Night' ? '09:00 PM' : '12:00 PM',
+                    task: task.title,
+                    priority: task.priority
+                }))
+            };
+
+            const result = await updateCalendarWithSchedule(simpleSchedule, selectedDate);
+            setUpdateStatus({
+                success: result.success,
+                message: result.message
+            });
+        } catch (err) {
+            setUpdateStatus({
+                success: false,
+                message: `Error: ${err instanceof Error ? err.message : String(err)}`
+            });
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     return (
         <div className="bg-white rounded-lg shadow-lg p-6 max-w-4xl mx-auto my-8">
             <h2 className="text-2xl font-bold text-[#27548A] mb-6">Generate Optimized Schedule</h2>
@@ -194,7 +315,9 @@ const PlanGenerate: React.FC = () => {
             </div>
 
             <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                <h3 className="text-xl font-bold text-[#48A6A7] mb-4">Add New Task</h3>
+                <h3 className="text-xl font-bold text-[#48A6A7] mb-4">
+                    {editingTaskId ? 'Edit Task' : 'Add New Task'}
+                </h3>
                 <div className="input-group">
                     <label className="block mb-2 text-gray-700">
                         Task Title:
@@ -269,21 +392,91 @@ const PlanGenerate: React.FC = () => {
                         />
                     </label>
                 </div>
-                <button onClick={handleAddTask} className="w-full bg-[#48A6A7] hover:bg-[#006A71] text-white py-3 px-6 rounded-lg transition duration-200 mt-4">Add Task</button>
+                <div className="flex gap-2 mt-4">
+                    {editingTaskId ? (
+                        <>
+                            <button 
+                                onClick={handleUpdateTask} 
+                                className="flex-1 bg-[#48A6A7] hover:bg-[#006A71] text-white py-3 px-6 rounded-lg transition duration-200"
+                            >
+                                Update Task
+                            </button>
+                            <button 
+                                onClick={handleCancelEdit}
+                                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 py-3 px-6 rounded-lg transition duration-200"
+                            >
+                                Cancel
+                            </button>
+                        </>
+                    ) : (
+                        <button 
+                            onClick={handleAddTask} 
+                            className="w-full bg-[#48A6A7] hover:bg-[#006A71] text-white py-3 px-6 rounded-lg transition duration-200"
+                        >
+                            Add Task
+                        </button>
+                    )}
+                </div>
                 {error && <p className="error text-red-500 mt-2">{error}</p>}
             </div>
 
             <div className="tasks-list mb-6">
-                <h3 className="text-xl font-bold text-[#48A6A7] mb-4">Tasks to Schedule:</h3>
-                <ul className="bg-gray-50 rounded-lg p-4">
-                    {userTasks.map((task) => (
-                        <li key={task.id} className="mb-2 pb-2 border-b last:border-0">
-                            <strong className="text-[#27548A]">{task.title}</strong> ({task.priority} priority, {task.duration} min
-                            {task.timeFrame !== 'Anytime' && `, ${task.timeFrame}`})
-                            {task.description && <p className="text-sm text-gray-600">{task.description}</p>}
-                        </li>
-                    ))}
-                </ul>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-[#48A6A7]">Tasks to Schedule:</h3>
+                    {userTasks.length > 0 && (
+                        <button 
+                            onClick={handleDeleteAllTasks} 
+                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm transition duration-200"
+                        >
+                            Delete All Tasks
+                        </button>
+                    )}
+                </div>
+                
+                {userTasks.length > 0 ? (
+                    <ul className="bg-gray-50 rounded-lg p-4">
+                        {userTasks.map((task) => (
+                            <li key={task.id} className="mb-4 pb-3 border-b last:border-0">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <strong className="text-[#27548A]">{task.title}</strong> 
+                                        <span className="text-gray-600">
+                                            ({task.priority} priority, {task.duration} min
+                                            {task.timeFrame !== 'Anytime' && `, ${task.timeFrame}`})
+                                        </span>
+                                        {task.description && <p className="text-sm text-gray-600 mt-1">{task.description}</p>}
+                                    </div>
+                                    <div className="flex space-x-2">
+                                        <button 
+                                            onClick={() => handleEditTask(task.id)}
+                                            className="text-blue-600 hover:text-blue-800 text-sm rounded px-2 py-1 hover:bg-blue-50"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteTask(task.id)}
+                                            className="text-red-600 hover:text-red-800 text-sm rounded px-2 py-1 hover:bg-red-50"
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-gray-500 bg-gray-50 p-4 rounded-lg">No tasks added yet.</p>
+                )}
+                
+                {userTasks.length > 0 && (
+                    <button
+                        onClick={handleAddTasksToCalendar}
+                        disabled={isUpdating}
+                        className="w-full mt-4 bg-[#27548A] hover:bg-[#1D3F66] text-white py-2 px-4 rounded-lg transition duration-200 disabled:bg-gray-400"
+                    >
+                        {isUpdating ? 'Adding to Calendar...' : 'Add Tasks Directly to Calendar'}
+                    </button>
+                )}
             </div>
 
             <div className="existing-events mb-6">
@@ -323,11 +516,15 @@ const PlanGenerate: React.FC = () => {
 
             <button
                 onClick={generateSchedule}
-                disabled={isLoading}
+                disabled={isLoading || userTasks.length === 0}
                 className="w-full bg-[#48A6A7] hover:bg-[#006A71] text-white py-3 px-6 rounded-lg transition duration-200 disabled:bg-gray-400"
             >
                 {isLoading ? 'Generating...' : 'Generate Optimized Schedule'}
             </button>
+            
+            {userTasks.length === 0 && (
+                <p className="text-amber-600 text-center mt-2">Add some tasks to generate a schedule</p>
+            )}
 
             {generatedSchedule && (
                 <div className="schedule-result mt-6">
@@ -370,6 +567,12 @@ const PlanGenerate: React.FC = () => {
                             {updateStatus.message}
                         </div>
                     )}
+                </div>
+            )}
+
+            {updateStatus && (
+                <div className={`mt-3 p-3 rounded ${updateStatus.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {updateStatus.message}
                 </div>
             )}
         </div>
